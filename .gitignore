@@ -1,0 +1,71 @@
+# === GLOBAL ===
+node_modules/
+*.log
+*.tsbuildinfo
+.DS_Store
+.env
+.env.local
+.env.*.local
+
+# === FRONTEND ===
+
+# dependencies
+frontend/node_modules
+frontend/.pnp
+frontend/.pnp.*
+frontend/yarn.lock
+frontend/package-lock.json
+
+# Firebase service keys (❗ säkra filer)
+frontend/firebase/serviceAccount.json
+
+# Yarn (opt-in)
+!frontend/.yarn/patches
+!frontend/.yarn/plugins
+!frontend/.yarn/releases
+!frontend/.yarn/versions
+
+# testing
+frontend/coverage
+
+# next.js
+frontend/.next/
+.next/
+out/
+
+# production
+frontend/build
+
+# misc
+frontend/*.pem
+
+# debug logs
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+frontend/.pnpm-debug.log*
+
+# environment files
+frontend/.env*
+
+# Vercel
+frontend/.vercel
+.vercel/
+
+# TypeScript
+frontend/*.tsbuildinfo
+frontend/next-env.d.ts
+
+# === BACKEND ===
+
+backend/node_modules
+backend/package-lock.json
+
+# Firebase service key
+backend/barbershop-booking-*.json
+backend/serviceAccountKey.json
+backend/serviceAccount.json
+
+
+# env
+backend/.env*
