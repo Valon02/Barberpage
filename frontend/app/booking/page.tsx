@@ -7,7 +7,7 @@ import "@/styles/calendar-dark.css";
 import { format, isBefore, startOfDay } from "date-fns";
 import { onAuthStateChanged } from "firebase/auth";
 import { auth } from "@/firebase/firebaseConfig";
-import { saveBooking } from "@/utils/saveBooking";
+import { bookSlot } from "@/utils/bookSlot";
 import {
   getFirestore,
   doc,
@@ -25,12 +25,14 @@ interface TimeSlot {
   booked: boolean;
 }
 
+type ServiceType = "Hår" | "Hår + Skägg";
+
 export default function BookingPage() {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [currentViewDate, setCurrentViewDate] = useState(new Date());
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
   const [barber, setBarber] = useState("fadezbydrizz");
-  const [service, setService] = useState("Hår + Skägg");
+  const [service, setService] = useState<ServiceType>("Hår + Skägg");
   const [barberInfo, setBarberInfo] = useState<{ name: string; workingDays: number[] } | null>(null);
   const [timeSlots, setTimeSlots] = useState<TimeSlot[]>([]);
   const [user, setUser] = useState<any>(null);
@@ -79,10 +81,12 @@ export default function BookingPage() {
         )
       );
 
-      const fetched: TimeSlot[] = snapshot.docs.map((doc) => ({
-        time: doc.data().time,
-        booked: false,
-      }));
+      const fetched: TimeSlot[] = snapshot.docs
+        .map((doc) => ({
+          time: doc.data().time,
+          booked: false,
+        }))
+        .sort((a, b) => a.time.localeCompare(b.time)); // ✅ Sortera tider
 
       setTimeSlots(fetched);
       setSelectedTime(null);
@@ -121,7 +125,7 @@ export default function BookingPage() {
       barber,
     };
 
-    const success = await saveBooking(bookingData);
+    const success = await bookSlot(bookingData);
     if (success) {
       setSuccess("Bokning sparad! 🙌");
       setSelectedTime(null);
@@ -151,7 +155,7 @@ export default function BookingPage() {
 
         <select
           value={service}
-          onChange={(e) => setService(e.target.value)}
+          onChange={(e) => setService(e.target.value as ServiceType)}
           className="mb-6 w-full p-3 rounded bg-gray-800 text-white border border-gray-600"
         >
           <option value="Hår + Skägg">Hår + Skägg</option>
@@ -172,8 +176,7 @@ export default function BookingPage() {
             activeStartDate && setCurrentViewDate(activeStartDate)
           }
           tileDisabled={({ date }) =>
-            isBefore(date, today) ||
-            !barberInfo?.workingDays.includes(date.getDay())
+            isBefore(date, today) || !barberInfo?.workingDays.includes(date.getDay())
           }
           tileClassName={({ date }) => {
             const isPast = isBefore(date, today);
@@ -196,7 +199,7 @@ export default function BookingPage() {
       {/* Tider & Formulär */}
       <div className="md:w-1/3 p-6">
         <h3 className="text-xl font-semibold mb-4 capitalize">
-          {format(selectedDate, "eeee d MMMM", { locale: undefined })}
+          {format(selectedDate, "eeee d MMMM")}
         </h3>
 
         {timeSlots.length > 0 ? (

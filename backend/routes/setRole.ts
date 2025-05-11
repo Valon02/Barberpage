@@ -1,5 +1,5 @@
 import express, { Request, Response } from "express";
-import admin from "../firebase"; // 👈 importera från din centraliserade setup
+import { admin } from "../firebase"; // ✅ FIX: named import
 
 const router = express.Router();
 

@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
-import { fetchBookings } from '@/utils/api'; // Kontrollera att sökvägen är rätt
+import { fetchBookings } from '@/utils/bookingApi';
+
 
 interface Booking {
   service: string;

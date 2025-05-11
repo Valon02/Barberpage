@@ -1,11 +1,11 @@
 import express, { Request, Response } from "express";
-import admin from "../firebase"; // ✅ centraliserad Firebase-init
+import { db } from "../firebase";
+import { format, addMinutes, isBefore } from "date-fns";
 
-const db = admin.firestore();
 const router = express.Router();
 
-// 🔹 Hämta alla slots
-router.get("/", async (req: Request, res: Response): Promise<void> => {
+// GET /api/slots
+router.get("/", async (_req: Request, res: Response) => {
   try {
     const snapshot = await db.collection("slots").get();
     const slots = snapshot.docs.map((doc) => ({
@@ -13,34 +13,22 @@ router.get("/", async (req: Request, res: Response): Promise<void> => {
       ...doc.data(),
     }));
     res.json(slots);
-  } catch (error) {
-    console.error("GET / error:", error);
-    res.status(500).json({ message: "Fel vid hämtning av slots" });
+  } catch (err) {
+    console.error("❌ Fel vid hämtning av slots:", err);
+    res.status(500).json({ message: "Serverfel vid hämtning" });
   }
 });
 
-// 🔹 Skapa en individuell slot
-router.post("/create", async (req: Request, res: Response): Promise<void> => {
+// POST /api/slots
+router.post("/", async (req: Request, res: Response) => {
   const { date, time, barber } = req.body;
 
   if (!date || !time || !barber) {
-    res.status(400).json({ message: "Alla fält krävs" });
+    res.status(400).json({ message: "Saknar fält" });
     return;
   }
 
   try {
-    const exists = await db
-      .collection("slots")
-      .where("date", "==", date)
-      .where("time", "==", time)
-      .where("barber", "==", barber)
-      .get();
-
-    if (!exists.empty) {
-      res.status(409).json({ message: "Slot finns redan" });
-      return;
-    }
-
     await db.collection("slots").add({
       date,
       time,
@@ -48,19 +36,96 @@ router.post("/create", async (req: Request, res: Response): Promise<void> => {
       booked: false,
     });
 
-    res.json({ message: "✅ Slot skapad!" });
+    res.status(201).json({ message: "Slot skapad!" });
   } catch (err) {
-    console.error("POST /create error:", err);
-    res.status(500).json({ message: "Fel vid skapande av slot" });
+    console.error("❌ Fel vid skapande av slot:", err);
+    res.status(500).json({ message: "Serverfel vid skapande" });
   }
 });
 
-// 🔹 Kopiera slots från en dag till en annan
-router.post("/copy-day", async (req: Request, res: Response): Promise<void> => {
+// DELETE /api/slots/:id
+router.delete("/:id", async (req: Request, res: Response) => {
+  const { id } = req.params;
+
+  try {
+    await db.collection("slots").doc(id).delete();
+    res.status(200).json({ message: "Slot borttagen" });
+  } catch (err) {
+    console.error("❌ Fel vid radering av slot:", err);
+    res.status(500).json({ message: "Serverfel vid radering" });
+  }
+});
+
+// POST /api/slots/bulk
+router.post("/bulk", async (req: Request, res: Response) => {
+  const { days, startHour, endHour, interval, barber } = req.body;
+
+  if (
+    !Array.isArray(days) ||
+    typeof startHour !== "number" ||
+    typeof endHour !== "number" ||
+    typeof interval !== "number" ||
+    typeof barber !== "string"
+  ) {
+    res.status(400).json({ message: "Saknar eller ogiltiga fält" });
+    return;
+  }
+
+  try {
+    const today = new Date();
+    let createdCount = 0;
+
+    for (let i = 0; i < 30; i++) {
+      const date = new Date(today);
+      date.setDate(today.getDate() + i);
+
+      if (!days.includes(date.getDay())) continue;
+
+      const dateStr = format(date, "yyyy-MM-dd");
+
+      let currentTime = new Date(date);
+      currentTime.setHours(startHour, 0, 0, 0);
+
+      const endTime = new Date(date);
+      endTime.setHours(endHour, 0, 0, 0);
+
+      while (isBefore(currentTime, endTime)) {
+        const timeStr = format(currentTime, "HH:mm");
+
+        const existing = await db
+          .collection("slots")
+          .where("date", "==", dateStr)
+          .where("time", "==", timeStr)
+          .where("barber", "==", barber)
+          .get();
+
+        if (existing.empty) {
+          await db.collection("slots").add({
+            date: dateStr,
+            time: timeStr,
+            barber,
+            booked: false,
+          });
+          createdCount++;
+        }
+
+        currentTime = addMinutes(currentTime, interval);
+      }
+    }
+
+    res.status(201).json({ message: `✅ Skapade ${createdCount} tider.` });
+  } catch (err) {
+    console.error("❌ Fel vid bulk-skapande:", err);
+    res.status(500).json({ message: "Serverfel vid bulk-skapande" });
+  }
+});
+
+// POST /api/slots/copy
+router.post("/copy", async (req: Request, res: Response) => {
   const { fromDate, toDate, barber } = req.body;
 
   if (!fromDate || !toDate || !barber) {
-    res.status(400).json({ message: "fromDate, toDate och barber krävs" });
+    res.status(400).json({ message: "Saknar fält" });
     return;
   }
 
@@ -71,46 +136,38 @@ router.post("/copy-day", async (req: Request, res: Response): Promise<void> => {
       .where("barber", "==", barber)
       .get();
 
-    const copied: string[] = [];
+    if (snapshot.empty) {
+      res.status(404).json({ message: "Inga tider att kopiera" });
+      return;
+    }
+
+    let copied = 0;
 
     for (const doc of snapshot.docs) {
       const data = doc.data();
 
-      const exists = await db
+      const existing = await db
         .collection("slots")
         .where("date", "==", toDate)
         .where("time", "==", data.time)
         .where("barber", "==", barber)
         .get();
 
-      if (exists.empty) {
+      if (existing.empty) {
         await db.collection("slots").add({
           date: toDate,
           time: data.time,
           barber,
           booked: false,
         });
-        copied.push(data.time);
+        copied++;
       }
     }
 
-    res.json({ message: `✅ Kopierade ${copied.length} slots.`, copied });
+    res.status(201).json({ message: `✅ Kopierade ${copied} tider.` });
   } catch (err) {
-    console.error("POST /copy-day error:", err);
-    res.status(500).json({ message: "Fel vid kopiering" });
-  }
-});
-
-// 🔹 Ta bort slot
-router.delete("/:id", async (req: Request, res: Response): Promise<void> => {
-  const slotId = req.params.id;
-
-  try {
-    await db.collection("slots").doc(slotId).delete();
-    res.send("❌ Slot borttagen");
-  } catch (err) {
-    console.error("DELETE / error:", err);
-    res.status(500).send("Fel vid radering");
+    console.error("❌ Fel vid kopiering av tider:", err);
+    res.status(500).json({ message: "Serverfel vid kopiering" });
   }
 });
 

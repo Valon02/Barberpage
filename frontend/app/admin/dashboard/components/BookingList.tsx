@@ -1,3 +1,4 @@
+// BookingList.tsx
 import React from "react";
 
 type Booking = {
@@ -26,7 +27,6 @@ const BookingList = ({ bookings, onDeleteSlot }: Props) => {
 
   return (
     <div className="bg-gray-800 rounded p-4 space-y-8">
-      {/* 🟢 Uppkommande bokningar */}
       <div>
         <h2 className="text-xl font-semibold mb-4">Kommande bokningar</h2>
         {upcoming.length === 0 ? (
@@ -57,7 +57,6 @@ const BookingList = ({ bookings, onDeleteSlot }: Props) => {
         )}
       </div>
 
-      {/* 🕒 Senaste bokningar */}
       <div>
         <h2 className="text-xl font-semibold mb-4">Senaste bokningar</h2>
         {recent.length === 0 ? (

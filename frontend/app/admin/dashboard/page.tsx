@@ -12,13 +12,13 @@ import {
 import {
   getBookings,
   getAvailableSlots,
-  createBulkSlots,
   deleteSlot,
-  createSingleSlot,
+  deleteBooking,
   copySlotsToDate,
 } from "@/utils/adminApi";
-import { format, parseISO } from "date-fns";
-import { Button } from "@/components/ui/button";
+import { buildUrl } from "@/utils/apiClient"; // ✅ Detta behövs
+import { createSmartSlots } from "@/utils/smartSlotUtils";
+import { format, isBefore } from "date-fns";
 import { Card, CardContent } from "@/components/ui/card";
 import BookingList from "./components/BookingList";
 import CalendarPicker from "./components/CalendarPicker";
@@ -29,8 +29,10 @@ export default function AdminDashboard() {
   const [bookings, setBookings] = useState<any[]>([]);
   const [slots, setSlots] = useState<any[]>([]);
   const [stats, setStats] = useState<{ [key: string]: number }>({});
+
   const [singleDate, setSingleDate] = useState("");
-  const [singleTime, setSingleTime] = useState("");
+  const [startTime, setStartTime] = useState("09:00");
+  const [endTime, setEndTime] = useState("17:00");
   const [barber, setBarber] = useState("fadezbydrizz");
   const [copyFromDate, setCopyFromDate] = useState("");
   const [copyToDate, setCopyToDate] = useState("");
@@ -49,46 +51,40 @@ export default function AdminDashboard() {
 
   const generateStats = (data: any[]) => {
     const grouped: { [key: string]: number } = {};
+    const now = new Date();
+
     data.forEach((b) => {
-      const week =
-        format(parseISO(b.date), "yyyy-MM") +
-        " v" +
-        getWeekNumber(new Date(b.date));
-      grouped[week] = (grouped[week] || 0) + (b.price || 250);
+      const dateObj = new Date(b.date);
+      const week = format(dateObj, "yyyy-MM") + " v" + getWeekNumber(dateObj);
+      if (isBefore(dateObj, now)) {
+        grouped[week] = (grouped[week] || 0) + (b.price || 250);
+      }
     });
     setStats(grouped);
   };
 
   const getWeekNumber = (date: Date) => {
     const onejan = new Date(date.getFullYear(), 0, 1);
-    const millisecsInDay = 86400000;
-    return Math.ceil(
-      ((date.getTime() - onejan.getTime()) / millisecsInDay +
-        onejan.getDay() +
-        1) /
-        7
-    );
+    return Math.ceil(((date.getTime() - onejan.getTime()) / 86400000 + onejan.getDay() + 1) / 7);
   };
 
   const handleCreateSlots = async () => {
-    const created = await createBulkSlots({
-      days: [1, 2, 3, 4, 5],
-      startHour: 9,
-      endHour: 17,
-      interval: 30,
+    if (!singleDate) return alert("Välj ett datum först");
+
+    const [startHour] = startTime.split(":").map(Number);
+    const [endHour] = endTime.split(":").map(Number);
+
+    const success = await createSmartSlots({
+      date: singleDate,
+      startHour,
+      endHour,
+      barber,
     });
-    if (created) {
-      alert("Tider skapade!");
+
+    if (success) {
+      alert("Smarta tider skapade!");
       fetchAllData();
     }
-  };
-
-  const handleAddSingleSlot = async () => {
-    if (!singleDate || !singleTime) return;
-    await createSingleSlot({ date: singleDate, time: singleTime, barber });
-    fetchAllData();
-    setSingleDate("");
-    setSingleTime("");
   };
 
   const handleCopySlots = async () => {
@@ -104,6 +100,35 @@ export default function AdminDashboard() {
     fetchAllData();
   };
 
+  const handleDeleteBooking = async (bookingId: string) => {
+    const confirmDelete = window.confirm("Är du säker på att du vill avboka?");
+    if (!confirmDelete) return;
+
+    // ✅ Använd rätt base URL (Express kör på 5000)
+    const res = await fetch(buildUrl(`/api/bookings/${bookingId}`), {
+      method: "DELETE",
+    });
+
+    if (res.ok) {
+      setBookings((prev) => prev.filter((b) => b.id !== bookingId));
+    } else {
+      alert("Kunde inte avboka bokningen.");
+    }
+  };
+
+  const totalBookingsThisWeek = bookings.filter((b) => {
+    const now = new Date();
+    const week = getWeekNumber(now);
+    return getWeekNumber(new Date(b.date)) === week;
+  });
+
+  const todayStr = format(new Date(), "yyyy-MM-dd");
+  const todaysSlots = slots.filter((s) => s.date === todayStr);
+
+  const filteredSlots = slots
+    .filter((s) => s.date === singleDate && s.barber === barber)
+    .map((s) => ({ id: s.id, time: s.time }));
+
   return (
     <div className="min-h-screen bg-gray-900 text-white p-8">
       <h1 className="text-4xl font-bold mb-8">Adminpanel</h1>
@@ -112,20 +137,23 @@ export default function AdminDashboard() {
         <Card>
           <CardContent className="p-4">
             <h2 className="text-lg font-semibold mb-2">Totala bokningar</h2>
-            <p className="text-3xl font-bold">{bookings.length}</p>
+            <p className="text-3xl font-bold">{totalBookingsThisWeek.length}</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-4">
-            <h2 className="text-lg font-semibold mb-2">Totala tider</h2>
-            <p className="text-3xl font-bold">{slots.length}</p>
+            <h2 className="text-lg font-semibold mb-2">Dagens tider</h2>
+            <p className="text-3xl font-bold">{todaysSlots.length}</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-4">
             <h2 className="text-lg font-semibold mb-2">Totala intäkter</h2>
             <p className="text-3xl font-bold">
-              {bookings.reduce((acc, b) => acc + (b.price || 250), 0)} kr
+              {bookings
+                .filter((b) => isBefore(new Date(b.date), new Date()))
+                .reduce((acc, b) => acc + (b.price || 250), 0)}{" "}
+              kr
             </p>
           </CardContent>
         </Card>
@@ -133,18 +161,21 @@ export default function AdminDashboard() {
 
       <CalendarPicker
         singleDate={singleDate}
-        singleTime={singleTime}
+        startTime={startTime}
+        endTime={endTime}
         barber={barber}
         onDateChange={setSingleDate}
-        onTimeChange={setSingleTime}
+        onStartTimeChange={setStartTime}
+        onEndTimeChange={setEndTime}
         onBarberChange={setBarber}
-        onAddSlot={handleAddSingleSlot}
+        onCreateSmartSlots={handleCreateSlots}
         copyFromDate={copyFromDate}
         copyToDate={copyToDate}
         onCopyChangeFrom={setCopyFromDate}
         onCopyChangeTo={setCopyToDate}
         onCopySlots={handleCopySlots}
-        onCreateBulk={handleCreateSlots}
+        existingSlots={filteredSlots}
+        onDeleteSlot={handleDeleteSlot}
       />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-8">
@@ -173,7 +204,7 @@ export default function AdminDashboard() {
           </CardContent>
         </Card>
 
-        <BookingList bookings={bookings} onDeleteSlot={handleDeleteSlot} />
+        <BookingList bookings={bookings} onDeleteSlot={handleDeleteBooking} />
       </div>
     </div>
   );

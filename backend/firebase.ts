@@ -1,14 +1,17 @@
-// backend/firebase.ts
-import * as admin from 'firebase-admin';
-import * as dotenv from 'dotenv';
+import * as admin from "firebase-admin";
+import * as dotenv from "dotenv";
 
 dotenv.config();
 
-const decoded = Buffer.from(process.env.FIREBASE_KEY_BASE64!, 'base64').toString();
+const decoded = Buffer.from(process.env.FIREBASE_KEY_BASE64!, "base64").toString("utf-8");
 const serviceAccount = JSON.parse(decoded);
 
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
-});
+if (!admin.apps.length) {
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount),
+  });
+}
 
-export default admin;
+const db = admin.firestore();
+
+export { admin, db };
